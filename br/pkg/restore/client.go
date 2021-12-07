@@ -211,6 +211,22 @@ func (rc *Client) InitBackupMeta(
 	return rc.fileImporter.CheckMultiIngestSupport(c, rc.pdClient)
 }
 
+// InitBackupMetaForTxn loads schemas from BackupMeta to initialize RestoreClient.
+func (rc *Client) InitBackupMetaForTxn(
+	c context.Context,
+	backupMeta *backuppb.BackupMeta,
+	backend *backuppb.StorageBackend,
+	externalStorage storage.ExternalStorage,
+	reader *metautil.MetaReader) error {
+	rc.backupMeta = backupMeta
+	log.Info("load backupmeta", zap.Int("databases", len(rc.databases)), zap.Int("jobs", len(rc.ddlJobs)))
+
+	metaClient := NewSplitClient(rc.pdClient, rc.tlsConf)
+	importCli := NewImportClient(metaClient, rc.tlsConf, rc.keepaliveConf)
+	rc.fileImporter = NewFileImporter(metaClient, importCli, backend, rc.backupMeta.IsRawKv, rc.rateLimit)
+	return rc.fileImporter.CheckMultiIngestSupport(c, rc.pdClient)
+}
+
 // IsRawKvMode checks whether the backup data is in raw kv format, in which case transactional recover is forbidden.
 func (rc *Client) IsRawKvMode() bool {
 	return rc.backupMeta.IsRawKv

@@ -370,18 +370,22 @@ func rewriteFileKeys(file *backuppb.File, rewriteRules *RewriteRules) (startKey,
 	endID := tablecodec.DecodeTableID(file.GetEndKey())
 	var rule *import_sstpb.RewriteRule
 	if startID == endID {
-		startKey, rule = rewriteRawKey(file.GetStartKey(), rewriteRules)
-		if rewriteRules != nil && rule == nil {
-			log.Error("cannot find rewrite rule",
-				logutil.Key("startKey", file.GetStartKey()),
-				zap.Reflect("rewrite data", rewriteRules.Data))
-			err = errors.Annotate(berrors.ErrRestoreInvalidRewrite, "cannot find rewrite rule for start key")
-			return
-		}
-		endKey, rule = rewriteRawKey(file.GetEndKey(), rewriteRules)
-		if rewriteRules != nil && rule == nil {
-			err = errors.Annotate(berrors.ErrRestoreInvalidRewrite, "cannot find rewrite rule for end key")
-			return
+		if startID != 0 {
+			startKey, rule = rewriteRawKey(file.GetStartKey(), rewriteRules)
+			if rewriteRules != nil && rule == nil {
+				log.Error("cannot find rewrite rule",
+					logutil.Key("startKey", file.GetStartKey()),
+					zap.Reflect("rewrite data", rewriteRules.Data))
+				err = errors.Annotate(berrors.ErrRestoreInvalidRewrite, "cannot find rewrite rule for start key")
+				return
+			}
+			endKey, rule = rewriteRawKey(file.GetEndKey(), rewriteRules)
+			if rewriteRules != nil && rule == nil {
+				err = errors.Annotate(berrors.ErrRestoreInvalidRewrite, "cannot find rewrite rule for end key")
+				return
+			}
+		} else {
+			return file.GetStartKey(), file.GetEndKey(), nil
 		}
 	} else {
 		log.Error("table ids dont matched",
