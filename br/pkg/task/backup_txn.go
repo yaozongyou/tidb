@@ -1,6 +1,7 @@
 package task
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -28,10 +29,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	flagLavadbTid = "lavadb-tid"
-)
-
 // TxnBackupConfig is the configuration specific for txn kv range backup tasks.
 type TxnBackupConfig struct {
 	Config
@@ -43,14 +40,17 @@ type TxnBackupConfig struct {
 	RemoveSchedulers bool          `json:"remove-schedulers" toml:"remove-schedulers"`
 	IgnoreStats      bool          `json:"ignore-stats" toml:"ignore-stats"`
 	UseBackupMetaV2  bool          `json:"use-backupmeta-v2"`
+	StartKey         []byte        `json:"start-key" toml:"start-key"`
+	EndKey           []byte        `json:"end-key" toml:"end-key"`
 	CompressionConfig
-
-	LavadbTid int32
 }
 
 // DefineTxnBackupFlags defines common flags for the backup command.
 func DefineTxnBackupFlags(command *cobra.Command) {
-	command.Flags().Int32(flagLavadbTid, 720051, "lavadb tid to backup")
+	command.Flags().StringP(flagKeyFormat, "", "hex", "start/end key format, support raw|escaped|hex")
+	command.Flags().StringP(flagStartKey, "", "", "restore raw kv start key, key is inclusive")
+	command.Flags().StringP(flagEndKey, "", "", "restore raw kv end key, key is exclusive")
+
 	command.Flags().String(flagCompressionType, "zstd",
 		"backup sst file compression algorithm, value can be one of 'lz4|zstd|snappy'")
 	command.Flags().Bool(flagRemoveSchedulers, false,
@@ -108,8 +108,31 @@ func (cfg *TxnBackupConfig) ParseTxnBackupConfigFromFlags(flags *pflag.FlagSet) 
 	if err != nil {
 		return errors.Trace(err)
 	}
-	cfg.LavadbTid, err = flags.GetInt32(flagLavadbTid)
-	return errors.Trace(err)
+
+	format, err := flags.GetString(flagKeyFormat)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	start, err := flags.GetString(flagStartKey)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	cfg.StartKey, err = utils.ParseKey(format, start)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	end, err := flags.GetString(flagEndKey)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	cfg.EndKey, err = utils.ParseKey(format, end)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if len(cfg.StartKey) > 0 && len(cfg.EndKey) > 0 && bytes.Compare(cfg.StartKey, cfg.EndKey) >= 0 {
+		return errors.Annotate(berrors.ErrBackupInvalidRange, "endKey must be greater than startKey")
+	}
+	return nil
 }
 
 // adjustBackupConfig is use for BR(binary) and BR in TiDB.
@@ -149,7 +172,7 @@ func (cfg *TxnBackupConfig) adjustBackupConfig() {
 	}
 }
 
-func buildLavadbBackupRange(tid int32) []rtree.Range {
+func buildTxnBackupRange(tid int32) []rtree.Range {
 	// https://git.woa.com/cos-backend/lavadb-adapter/blob/master/pkg/encoding/encoding.go
 	var startKey [5]byte
 	var endKey [5]byte
@@ -270,7 +293,13 @@ func RunBackupLavadb(c context.Context, g glue.Glue, cmdName string, cfg *TxnBac
 		return errors.Trace(err)
 	}
 
-	ranges := buildLavadbBackupRange(cfg.LavadbTid)
+	ranges := []rtree.Range{
+		{
+			StartKey: cfg.StartKey,
+			EndKey:   cfg.EndKey,
+			Files:    nil,
+		},
+	}
 
 	// Metafile size should be less than 64MB.
 	metawriter := metautil.NewMetaWriter(client.GetStorage(),
