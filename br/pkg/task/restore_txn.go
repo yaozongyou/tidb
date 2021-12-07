@@ -1,12 +1,12 @@
 package task
 
 import (
+	"bytes"
 	"context"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
-	backuppb "github.com/pingcap/kvproto/pkg/brpb"
 	"github.com/pingcap/kvproto/pkg/import_sstpb"
 	"github.com/pingcap/log"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
@@ -23,6 +23,8 @@ import (
 // RestoreTxnConfig is the configuration specific for txn kv restore tasks.
 type RestoreTxnConfig struct {
 	Config
+	StartKey []byte `json:"start-key" toml:"start-key"`
+	EndKey   []byte `json:"end-key" toml:"end-key"`
 	RestoreCommonConfig
 
 	NoSchema           bool          `json:"no-schema" toml:"no-schema"`
@@ -41,6 +43,32 @@ func (cfg *RestoreTxnConfig) ParseFromFlags(flags *pflag.FlagSet) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
+
+	format, err := flags.GetString(flagKeyFormat)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	start, err := flags.GetString(flagStartKey)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	cfg.StartKey, err = utils.ParseKey(format, start)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	end, err := flags.GetString(flagEndKey)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	cfg.EndKey, err = utils.ParseKey(format, end)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	if len(cfg.StartKey) > 0 && len(cfg.EndKey) > 0 && bytes.Compare(cfg.StartKey, cfg.EndKey) >= 0 {
+		return errors.Annotate(berrors.ErrBackupInvalidRange, "endKey must be greater than startKey")
+	}
+
 	err = cfg.RestoreCommonConfig.ParseFromFlags(flags)
 	if err != nil {
 		return errors.Trace(err)
@@ -84,32 +112,9 @@ func (cfg *RestoreTxnConfig) adjustRestoreConfig() {
 
 // DefineTxnRestoreFlags defines the required flags for `lavadb` subcommand.
 func DefineTxnRestoreFlags(command *cobra.Command) {
-}
-
-// TODO: remove this func
-func filterRestoreFilesTem(
-	client *restore.Client,
-	cfg *RestoreTxnConfig,
-) (files []*backuppb.File, tables []*metautil.Table, dbs []*utils.Database) {
-	for _, db := range client.GetDatabases() {
-		createdDatabase := false
-		dbName := db.Info.Name.O
-		if name, ok := utils.GetSysDBName(db.Info.Name); utils.IsSysDB(name) && ok {
-			dbName = name
-		}
-		for _, table := range db.Tables {
-			if !cfg.TableFilter.MatchTable(dbName, table.Info.Name.O) {
-				continue
-			}
-			if !createdDatabase {
-				dbs = append(dbs, db)
-				createdDatabase = true
-			}
-			files = append(files, table.Files...)
-			tables = append(tables, table)
-		}
-	}
-	return
+	command.Flags().StringP(flagKeyFormat, "", "hex", "start/end key format, support raw|escaped|hex")
+	command.Flags().StringP(flagStartKey, "", "", "restore raw kv start key, key is inclusive")
+	command.Flags().StringP(flagEndKey, "", "", "restore raw kv end key, key is exclusive")
 }
 
 // RunRestoreTxn starts a restore task inside the current goroutine.
