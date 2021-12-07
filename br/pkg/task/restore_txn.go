@@ -1,7 +1,6 @@
 package task
 
 import (
-	"bytes"
 	"context"
 	"time"
 
@@ -23,8 +22,6 @@ import (
 // RestoreTxnConfig is the configuration specific for txn kv restore tasks.
 type RestoreTxnConfig struct {
 	Config
-	StartKey []byte `json:"start-key" toml:"start-key"`
-	EndKey   []byte `json:"end-key" toml:"end-key"`
 	RestoreCommonConfig
 
 	NoSchema           bool          `json:"no-schema" toml:"no-schema"`
@@ -43,32 +40,6 @@ func (cfg *RestoreTxnConfig) ParseFromFlags(flags *pflag.FlagSet) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-
-	format, err := flags.GetString(flagKeyFormat)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	start, err := flags.GetString(flagStartKey)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	cfg.StartKey, err = utils.ParseKey(format, start)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	end, err := flags.GetString(flagEndKey)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	cfg.EndKey, err = utils.ParseKey(format, end)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	if len(cfg.StartKey) > 0 && len(cfg.EndKey) > 0 && bytes.Compare(cfg.StartKey, cfg.EndKey) >= 0 {
-		return errors.Annotate(berrors.ErrBackupInvalidRange, "endKey must be greater than startKey")
-	}
-
 	err = cfg.RestoreCommonConfig.ParseFromFlags(flags)
 	if err != nil {
 		return errors.Trace(err)
@@ -223,7 +194,7 @@ func RunRestoreTxn(c context.Context, g glue.Glue, cmdName string, cfg *RestoreT
 		int64(len(ranges)+len(files)),
 		!cfg.LogProgress)
 
-	// Lavadb restore does not need to rewrite keys.
+	// txn restore does not need to rewrite keys.
 	rewrite := &restore.RewriteRules{}
 	err = restore.SplitRanges(ctx, client, ranges, rewrite, updateCh)
 	if err != nil {
