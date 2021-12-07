@@ -20,8 +20,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// RestoreLavadbConfig is the configuration specific for raw kv restore tasks.
-type RestoreLavadbConfig struct {
+// RestoreTxnConfig is the configuration specific for txn kv restore tasks.
+type RestoreTxnConfig struct {
 	Config
 	RestoreCommonConfig
 
@@ -31,7 +31,7 @@ type RestoreLavadbConfig struct {
 }
 
 // ParseFromFlags parses the restore-related flags from the flag set.
-func (cfg *RestoreLavadbConfig) ParseFromFlags(flags *pflag.FlagSet) error {
+func (cfg *RestoreTxnConfig) ParseFromFlags(flags *pflag.FlagSet) error {
 	var err error
 	cfg.NoSchema, err = flags.GetBool(flagNoSchema)
 	if err != nil {
@@ -64,7 +64,7 @@ func (cfg *RestoreLavadbConfig) ParseFromFlags(flags *pflag.FlagSet) error {
 // When new config was add and not included in parser.
 // we should set proper value in this function.
 // so that both binary and TiDB will use same default value.
-func (cfg *RestoreLavadbConfig) adjustRestoreConfig() {
+func (cfg *RestoreTxnConfig) adjustRestoreConfig() {
 	cfg.Config.adjust()
 	cfg.RestoreCommonConfig.adjust()
 
@@ -82,14 +82,14 @@ func (cfg *RestoreLavadbConfig) adjustRestoreConfig() {
 	}
 }
 
-// DefineLavadbRestoreFlags defines the required flags for `lavadb` subcommand.
-func DefineLavadbRestoreFlags(command *cobra.Command) {
+// DefineTxnRestoreFlags defines the required flags for `lavadb` subcommand.
+func DefineTxnRestoreFlags(command *cobra.Command) {
 }
 
 // TODO: remove this func
 func filterRestoreFilesTem(
 	client *restore.Client,
-	cfg *RestoreLavadbConfig,
+	cfg *RestoreTxnConfig,
 ) (files []*backuppb.File, tables []*metautil.Table, dbs []*utils.Database) {
 	for _, db := range client.GetDatabases() {
 		createdDatabase := false
@@ -112,8 +112,8 @@ func filterRestoreFilesTem(
 	return
 }
 
-// RunRestoreLavadb starts a restore task inside the current goroutine.
-func RunRestoreLavadb(c context.Context, g glue.Glue, cmdName string, cfg *RestoreLavadbConfig) error {
+// RunRestoreTxn starts a restore task inside the current goroutine.
+func RunRestoreTxn(c context.Context, g glue.Glue, cmdName string, cfg *RestoreTxnConfig) error {
 	cfg.adjustRestoreConfig()
 
 	defer summary.Summary(cmdName)
@@ -121,7 +121,7 @@ func RunRestoreLavadb(c context.Context, g glue.Glue, cmdName string, cfg *Resto
 	defer cancel()
 
 	if span := opentracing.SpanFromContext(ctx); span != nil && span.Tracer() != nil {
-		span1 := span.Tracer().StartSpan("task.RunRestoreLavadb", opentracing.ChildOf(span.Context()))
+		span1 := span.Tracer().StartSpan("task.RunRestoreTxn", opentracing.ChildOf(span.Context()))
 		defer span1.Finish()
 		ctx = opentracing.ContextWithSpan(ctx, span1)
 	}

@@ -79,8 +79,8 @@ func runRestoreRawCommand(command *cobra.Command, cmdName string) error {
 	return nil
 }
 
-func runRestoreLavadbCommand(command *cobra.Command, cmdName string) error {
-	cfg := task.RestoreLavadbConfig{Config: task.Config{LogProgress: HasLogFile()}}
+func runRestoreTxnCommand(command *cobra.Command, cmdName string) error {
+	cfg := task.RestoreTxnConfig{Config: task.Config{LogProgress: HasLogFile()}}
 	if err := cfg.ParseFromFlags(command.Flags()); err != nil {
 		command.SilenceUsage = false
 		return errors.Trace(err)
@@ -92,8 +92,8 @@ func runRestoreLavadbCommand(command *cobra.Command, cmdName string) error {
 		ctx, store = trace.TracerStartSpan(ctx)
 		defer trace.TracerFinishSpan(ctx, store)
 	}
-	if err := task.RunRestoreLavadb(GetDefaultContext(), gluetikv.Glue{}, cmdName, &cfg); err != nil {
-		log.Error("failed to restore lavadb", zap.Error(err))
+	if err := task.RunRestoreTxn(GetDefaultContext(), gluetikv.Glue{}, cmdName, &cfg); err != nil {
+		log.Error("failed to restore txn", zap.Error(err))
 		return errors.Trace(err)
 	}
 	return nil
@@ -204,10 +204,10 @@ func newTxnRestoreCommand() *cobra.Command {
 		Short: "(experimental) restore a txn kv range to TiKV cluster",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRestoreLavadbCommand(cmd, "Txn restore")
+			return runRestoreTxnCommand(cmd, "Txn restore")
 		},
 	}
 
-	task.DefineLavadbRestoreFlags(command)
+	task.DefineTxnRestoreFlags(command)
 	return command
 }
